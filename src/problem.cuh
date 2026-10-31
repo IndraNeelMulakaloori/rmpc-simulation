@@ -39,7 +39,7 @@ struct F1TenthGrid {
   }
 
   // O(1) Grid Obstacle look up.
-  RMPC_HD static bool check_grid(const State& x, const Params& p) {
+  RMPC_HD static bool checkGrid(const State& x, const Params& p) {
     // float ds = x.s - p.start_s; 
     // float k = p.start_k;
 
@@ -79,7 +79,7 @@ struct F1TenthGrid {
     float base_cost = CarSteering::stageCost(x, steer, steer_prev, ref, p.car, k, n);
     
     // massive penalty if the predicted state hits the grid
-    float hit_cost = check_grid(x, p) ? (p.collision_penalty / n) : 0.0f;
+    float hit_cost = checkGrid(x, p) ? (p.collision_penalty / n) : 0.0f;
     
     return base_cost + hit_cost;
   }

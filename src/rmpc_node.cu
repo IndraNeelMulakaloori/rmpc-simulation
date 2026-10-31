@@ -119,7 +119,7 @@ RMPC(const std::string &node_name) : rclcpp::Node(node_name){
     // ROS Publishers &  subscribers
     odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
       odom_topic, 1, [this](const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
-        this->odom_callback(pose_msg);
+        this->odomCallback(pose_msg);
       });
     // scan_subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
     //   scan_topic, 1, [this](const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg){
@@ -135,7 +135,7 @@ std::string default_path = package_share + "/waypoints/IMS_centerline.csv";
 this->declare_parameter<std::string>("centerline_path", default_path);
 std::string centerline_path = this->get_parameter("centerline_path").as_string();
 
-load_centerline(centerline_path);
+loadCenterline(centerline_path);
     
     // Cinfiguratio napraemters
     rmpc::Config cfg;
@@ -210,7 +210,7 @@ if (result.isError()) {
 
 }
 
-void load_centerline(const std::string& file_path, float target_speed = 4.0f) {
+void loadCenterline(const std::string& file_path, float target_speed = 4.0f) {
     std::ifstream file(file_path);
     if (!file.is_open()) {
         RCLCPP_ERROR(this->get_logger(), "Failed to open centerline file: %s", file_path.c_str());
@@ -263,11 +263,11 @@ void load_centerline(const std::string& file_path, float target_speed = 4.0f) {
    reference_path_[0].s = 0.0f;
     std::vector<float> segment_ds(N);
 
-    // Compute segment lengths, headings, and accumulated 's' via euclidean_distance
+    // Compute segment lengths, headings, and accumulated 's' via euclideanDistance
     for (size_t i = 0; i < N; ++i) {
         size_t next_idx = (i + 1) % N;
 
-        auto [dist, theta] = euclidean_distance(
+        auto [dist, theta] = euclideanDistance(
             {static_cast<double>(raw_points[i].x), static_cast<double>(raw_points[i].y)},
             {static_cast<double>(raw_points[next_idx].x), static_cast<double>(raw_points[next_idx].y)}
         );
@@ -303,7 +303,7 @@ void load_centerline(const std::string& file_path, float target_speed = 4.0f) {
                 "Successfully loaded centerline! Points: %zu" 
                 , N);
 }
-std::pair<double,double> euclidean_distance(const std::pair<double,double> &Point_A, const std::pair<double,double> &Point_B){
+std::pair<double,double> euclideanDistance(const std::pair<double,double> &Point_A, const std::pair<double,double> &Point_B){
     double dx = Point_B.first - Point_A.first;
     double dy = Point_B.second - Point_A.second;
     double distance = std::hypot(dx, dy);
@@ -311,12 +311,12 @@ std::pair<double,double> euclidean_distance(const std::pair<double,double> &Poin
 
     return {distance,theta};
 }
-bool bounding_box(const int &x_index, const int &y_index){
+bool boundingBox(const int &x_index, const int &y_index){
     if(x_index < 0 || x_index >= this->columns || y_index < 0 || y_index >= this->rows)
             return false;
         return true;
 }
-std::pair<int,int> convert_cartesian_to_grid(const double &x_coordinate, const double &y_coordinate ){
+std::pair<int,int> convertCartesianToGrid(const double &x_coordinate, const double &y_coordinate ){
     
     int x_index = static_cast<int>(x_coordinate / this->resolution) + this->x_offset;
     int y_index = static_cast<int>(y_coordinate / this->resolution) + this->y_offset;
@@ -365,12 +365,12 @@ std::pair<int,int> convert_cartesian_to_grid(const double &x_coordinate, const d
 //         // convertign cartesian coordianes to our matrix gird 
 //         // int x_ind = static_cast<int>(x_cart / this->resolution) + this->x_offset;
 //         // int y_ind = static_cast<int>(y_cart / this->resolution) + this->y_offset;
-//         std::pair<int,int> grid_indices = convert_cartesian_to_grid(
+//         std::pair<int,int> grid_indices = convertCartesianToGrid(
 //             (double) x_cart, (double) y_cart
 //         );
 
 //         // bodungin box 
-//         if(bounding_box(grid_indices.first,grid_indices.second) == false)
+//         if(boundingBox(grid_indices.first,grid_indices.second) == false)
 //             continue;
 
 
@@ -407,7 +407,7 @@ std::pair<int,int> convert_cartesian_to_grid(const double &x_coordinate, const d
 //    this-> map_initialized_ = true;
 // }
 
-void extract_pose(const nav_msgs::msg::Odometry::ConstPtr &pose_msg, double &x_car, double &y_car, double &yaw, double &vx, double &vy, double &r)
+void extractPose(const nav_msgs::msg::Odometry::ConstPtr &pose_msg, double &x_car, double &y_car, double &yaw, double &vx, double &vy, double &r)
     {   
 
 
@@ -431,7 +431,7 @@ void extract_pose(const nav_msgs::msg::Odometry::ConstPtr &pose_msg, double &x_c
 
         
     }
-void global_to_frenet(float car_x, float car_y, float car_yaw, 
+void globalToFrenet(float car_x, float car_y, float car_yaw, 
                       float &s, float &d, float &yaw_error, float &k) {
     if (reference_path_.empty()) return;
 
@@ -474,15 +474,15 @@ void global_to_frenet(float car_x, float car_y, float car_yaw,
 
    
 }
-void odom_callback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
+void odomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
 
     // Pose extraction, conversion from quaternion to euler angle
         double x_car, y_car, yaw, vx, vy, r;
-        extract_pose(pose_msg, x_car, y_car, yaw, vx, vy, r);
+        extractPose(pose_msg, x_car, y_car, yaw, vx, vy, r);
 
     // Convert the coordiantes to frenet coorrdiantes
     float s, d, yaw_error, k;
-    global_to_frenet(x_car, y_car, yaw, s, d, yaw_error, k);
+    globalToFrenet(x_car, y_car, yaw, s, d, yaw_error, k);
 
     // current state frenet coordiantes
     // Clamp speed to prevent Pacejka divide-by-zero NaNs
