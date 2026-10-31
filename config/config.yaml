@@ -1,0 +1,21 @@
+rmpc_node:
+  ros__parameters:
+    # Pub/Sub
+    # Pub/sub
+    odom_topic: '/ego_racecar/odom'
+    drive_topic: '/drive'
+    viz_topic: '/waypoint_sphere'
+    scan_topic : '/scan'
+    grid_topic : '/local_map'
+    # RHC params
+    horizon: 100
+    dt: 0.02
+
+
+    ## Steerign and velocity profiles  
+    v_max : 15.0      
+    v_min : 0.5              
+    wheel_base : 0.33 
+    min_steering_limit : -0.4189
+    max_steering_limit : 0.4189
+    max_steering_vel: 3.2

@@ -1,0 +1,13 @@
+build/
+install/
+log/
+*.o
+*.so
+*.a
+*.swp
+*~
+.vscode/
+__pycache__/
+*.pyc
+*.db3
+*.bag

@@ -1,0 +1,3 @@
+[submodule "helper/randomized-mpc"]
+	path = helper/randomized-mpc
+	url = git@github.com:IndraNeelMulakaloori/randomized-mpc.git
