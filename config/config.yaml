@@ -13,7 +13,7 @@ rmpc_node:
 
 
     ## Steerign and velocity profiles  
-    v_max : 15.0      
+    v_max : 10.5      
     v_min : 0.5              
     wheel_base : 0.33 
     min_steering_limit : -0.4189

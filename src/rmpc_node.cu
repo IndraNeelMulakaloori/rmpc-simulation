@@ -36,12 +36,6 @@ class RMPC: public rclcpp::Node{
     float r_bound;
 };
 
-struct FrenetState {
-    float s;
-    float d;
-    float yaw_error;
-};
-
 
 std::vector<Waypoint> reference_path_; // This is laoded from CSV
     string odom_topic ;
@@ -135,7 +129,7 @@ std::string default_path = package_share + "/waypoints/IMS_centerline.csv";
 this->declare_parameter<std::string>("centerline_path", default_path);
 std::string centerline_path = this->get_parameter("centerline_path").as_string();
 
-loadCenterline(centerline_path);
+load_centerline(centerline_path);
     
     // Cinfiguratio napraemters
     rmpc::Config cfg;
@@ -210,7 +204,7 @@ if (result.isError()) {
 
 }
 
-void loadCenterline(const std::string& file_path, float target_speed = 4.0f) {
+void load_centerline(const std::string& file_path, float target_speed = 4.0f) {
     std::ifstream file(file_path);
     if (!file.is_open()) {
         RCLCPP_ERROR(this->get_logger(), "Failed to open centerline file: %s", file_path.c_str());
@@ -311,12 +305,12 @@ std::pair<double,double> euclideanDistance(const std::pair<double,double> &Point
 
     return {distance,theta};
 }
-bool boundingBox(const int &x_index, const int &y_index){
+bool bounding_box(const int &x_index, const int &y_index){
     if(x_index < 0 || x_index >= this->columns || y_index < 0 || y_index >= this->rows)
             return false;
         return true;
 }
-std::pair<int,int> convertCartesianToGrid(const double &x_coordinate, const double &y_coordinate ){
+std::pair<int,int> convertartesian_to_grid(const double &x_coordinate, const double &y_coordinate ){
     
     int x_index = static_cast<int>(x_coordinate / this->resolution) + this->x_offset;
     int y_index = static_cast<int>(y_coordinate / this->resolution) + this->y_offset;
@@ -365,12 +359,12 @@ std::pair<int,int> convertCartesianToGrid(const double &x_coordinate, const doub
 //         // convertign cartesian coordianes to our matrix gird 
 //         // int x_ind = static_cast<int>(x_cart / this->resolution) + this->x_offset;
 //         // int y_ind = static_cast<int>(y_cart / this->resolution) + this->y_offset;
-//         std::pair<int,int> grid_indices = convertCartesianToGrid(
+//         std::pair<int,int> grid_indices = convertartesian_to_grid(
 //             (double) x_cart, (double) y_cart
 //         );
 
 //         // bodungin box 
-//         if(boundingBox(grid_indices.first,grid_indices.second) == false)
+//         if(bounding_box(grid_indices.first,grid_indices.second) == false)
 //             continue;
 
 
@@ -407,13 +401,13 @@ std::pair<int,int> convertCartesianToGrid(const double &x_coordinate, const doub
 //    this-> map_initialized_ = true;
 // }
 
-void extractPose(const nav_msgs::msg::Odometry::ConstPtr &pose_msg, double &x_car, double &y_car, double &yaw, double &vx, double &vy, double &r)
+void extractPose(const nav_msgs::msg::Odometry::ConstPtr &pose_msg, double &x_car, double &y_car, double &yaw, double &vx, double &vy, double &yaw_rate)
     {   
 
 
         vx = pose_msg->twist.twist.linear.x;
         vy = pose_msg->twist.twist.linear.y;
-        r  = pose_msg->twist.twist.angular.z;
+        yaw_rate  = pose_msg->twist.twist.angular.z;
 
         x_car = pose_msg->pose.pose.position.x;
         y_car = pose_msg->pose.pose.position.y;
@@ -432,7 +426,7 @@ void extractPose(const nav_msgs::msg::Odometry::ConstPtr &pose_msg, double &x_ca
         
     }
 void globalToFrenet(float car_x, float car_y, float car_yaw, 
-                      float &s, float &d, float &yaw_error, float &k) {
+                      float &s, float &d, float &yaw_error, float &kappa) {
     if (reference_path_.empty()) return;
 
     
@@ -440,7 +434,8 @@ void globalToFrenet(float car_x, float car_y, float car_yaw,
 
     int closest_idx = this->last_closest_idx;
     float min_dist = 1e9; 
-    
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "last_closest_idx : %d", closest_idx);
     // Search strictly forward along the track (e.g., up to 30 waypoints ahead) 
     // plus a small backward buffer (-5) for minor slips.
     int search_back = 5;
@@ -448,7 +443,13 @@ void globalToFrenet(float car_x, float car_y, float car_yaw,
 
     for (int i = -search_back; i <= search_ahead; ++i) {
         int idx = (this->last_closest_idx + i) % num_waypoints;
-        if (idx < 0) idx += num_waypoints; 
+    //     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 10, 
+    // "idx : %d", idx);
+        if (idx < 0) {
+    //         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 10, 
+    // "idx : %d", idx);
+            idx += num_waypoints; 
+        }
         
         float dist = std::hypot(car_x - reference_path_[idx].x, car_y - reference_path_[idx].y);
         if (dist < min_dist) {
@@ -457,40 +458,45 @@ void globalToFrenet(float car_x, float car_y, float car_yaw,
         }
     }
     
-    this->last_closest_idx = closest_idx;
-    const Waypoint& wp = reference_path_[closest_idx];
+    
+    
+   
+this->last_closest_idx = closest_idx;
+RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "last_closest_idx_latest : %d", this->last_closest_idx);
 
+     const Waypoint& wp = reference_path_[this->last_closest_idx];
     // Compute Cross-Track Error (d) and Progress (s)
     float dx = car_x - wp.x;
     float dy = car_y - wp.y;
 
-    k = wp.curvature;
+    kappa = wp.curvature;
 
     d = dx * (-std::sin(wp.heading)) + dy * std::cos(wp.heading);
     s = wp.s + (dx * std::cos(wp.heading) + dy * std::sin(wp.heading));
 
     yaw_error = car_yaw - wp.heading;
     yaw_error = std::atan2(std::sin(yaw_error), std::cos(yaw_error));
-
-   
 }
 void odomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
 
     // Pose extraction, conversion from quaternion to euler angle
-        double x_car, y_car, yaw, vx, vy, r;
-        extractPose(pose_msg, x_car, y_car, yaw, vx, vy, r);
-
+        double x_car, y_car, yaw, vx, vy, yaw_rate;
+        extractPose(pose_msg, x_car, y_car, yaw, vx, vy, yaw_rate);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "x: %.2f, y: %.2f, yaw: %.2f, vx : %.2f, vy : %.2f, yaw_rate : %.2f", x_car, y_car, vx, vy, yaw_rate);
     // Convert the coordiantes to frenet coorrdiantes
-    float s, d, yaw_error, k;
-    globalToFrenet(x_car, y_car, yaw, s, d, yaw_error, k);
-
+    float s, d, yaw_error, kappa;
+    globalToFrenet(x_car, y_car, yaw, s, d, yaw_error, kappa);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "State -> s: %.2f, d: %.2f, yaw: %.2f, yaw_err : %.2f, cuv : %.2f", s, d, yaw, yaw_error, kappa);
     // current state frenet coordiantes
     // Clamp speed to prevent Pacejka divide-by-zero NaNs
-    float safe_vx = std::max(this->v_min, (float)vx);  
+    float safe_vx = std::max(this->v_min, vx);  
     problem_params.car.vx = safe_vx;
 
     rmpc_ctrl_->setParams(this->problem_params);
-    rmpc_f1tenth::F1TenthGrid::State current_state = {s, d, yaw_error, vy, r};
+    rmpc_f1tenth::F1TenthGrid::State current_state = {s, d, yaw_error, vy, yaw_rate};
 
     
     
@@ -503,8 +509,17 @@ void odomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
 
 for (int step = 0; step < this->horizon; ++step) {
         float s_target = s + (step * safe_vx * dt);
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "safe_vx: %.2f, s_target : %.2f", safe_vx,s_target);
+   
         s_target = std::fmod(s_target, track_length);
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "safe_vx: %.2f, s_target : %.2f", safe_vx,s_target);
+   
         if (s_target < 0.0f) s_target += track_length;
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "safe_vx: %.2f, s_target : %.2f", safe_vx,s_target);
+   
 
         // Advance sequentially along waypoints from search_idx
         while (reference_path_[(search_idx + 1) % num_wp].s < s_target && 
@@ -522,15 +537,9 @@ for (int step = 0; step < this->horizon; ++step) {
 
         reference_horizon[step] = ref;
     }
-
-    // 3. Fire the GPU Solver
-    // You will need to add `float current_steering_ = 0.0f;` to your private class variables
-    // so you can feed the last commanded angle back into the solver as u0.
-
-
+    
     auto solve_result = rmpc_ctrl_->solve(current_state, this->current_steering_, reference_horizon);
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
-    "State -> s: %.2f, d: %.2f, yaw_err: %.2f", s, d, yaw_error);
+    
     // 4. Extract Command and Publish
     ackermann_msgs::msg::AckermannDriveStamped drive_msg;
     drive_msg.header.stamp = this->now();
@@ -561,21 +570,33 @@ for (int step = 0; step < this->horizon; ++step) {
         float friction_coeff = 0.523f; // From your params.yaml
         float gravity = 9.81f;
         float safe_corner_speed = std::sqrt((friction_coeff * gravity) / (max_k+ 1e-4f));
-
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "max_k : %.2f, safe_corner_speed: %.2f", max_k, safe_corner_speed );
         // 3. Clamp target velocity to your configured min/max speeds
-        double effective_v_min = std::max(0.8, (double)this->v_min);
-        double raw_target_velocity = std::clamp((double)safe_corner_speed, effective_v_min, (double)this->v_max);
+        
+        double raw_target_velocity = std::clamp((double)safe_corner_speed, this->v_min , this->v_max);
+         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "raw_target_vl: %.2f" ,raw_target_velocity);
+        // Allow 5.0 m/s^2 acceleration on straights
+        float max_accel = 7.51f; 
+        // Allow 9.0 m/s^2 braking into turn-in (within friction circle limits: mu * g ~ 0.523 * 9.81 ~ 5.13 m/s^2 lateral, ~8-9 m/s^2 longitudinal)
+        float max_decel = 8.26f; 
 
-        // 4. Slew-rate limiter (Smooth braking/acceleration)
-        float max_accel_step = 2.0f * this-> dt; 
+        float accel_step = max_accel * this->dt;
+        float decel_step = max_decel * this->dt;
+
         if (raw_target_velocity > this->current_velocity_cmd_) {
-            this->current_velocity_cmd_ = std::min((float)raw_target_velocity, this->current_velocity_cmd_ + max_accel_step);
+        this->current_velocity_cmd_ = std::min(
+        raw_target_velocity, 
+        (this->current_velocity_cmd_ + (max_accel * this->dt)));
         } else {
-            // Allow harder braking (4x multiplier) so it can slow down in time for the corner
-            float braking_multiplier = 6.0;
-            this->current_velocity_cmd_ = std::max((float)raw_target_velocity, this->current_velocity_cmd_ - max_accel_step * braking_multiplier); 
-        }
-
+        this->current_velocity_cmd_ = std::max(
+        raw_target_velocity, 
+        (this->current_velocity_cmd_ - (max_decel * this->dt))
+        );
+}
+             RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "accel_step: %.2f, decel_step : %.2f,this->current_velocity_cmd_: %.2f", accel_step, decel_step, this->current_velocity_cmd_);
         // Publish
         drive_msg.drive.steering_angle = optimal_steer_solver;
         drive_msg.drive.speed = this->current_velocity_cmd_;
