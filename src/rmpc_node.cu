@@ -42,6 +42,7 @@ std::vector<Waypoint> reference_path_; // This is laoded from CSV
     string drive_topic;
     string scan_topic;
     string grid_topic;
+    string opp_odom_topic;
     // RHC params
     int horizon;
     double dt;
@@ -79,6 +80,7 @@ std::vector<Waypoint> reference_path_; // This is laoded from CSV
     rmpc_f1tenth::F1TenthGrid::Params problem_params;
     // Publishers and subscribers
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_ ;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr opp_odom_subscriber_ ;
     rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_publisher_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscriber_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr grid_publisher_;
@@ -87,12 +89,13 @@ public:
 RMPC(const std::string &node_name) : rclcpp::Node(node_name){
     // Pub/sub declaraiton
         this->declare_parameter<string>("odom_topic", "/ego_racecar/odom" );
+        this->declare_parameter<string>("opp_odom_topic", "/ego_racecar/opp_odom");
         this->declare_parameter<string>("drive_topic", "/drive" );
         this->declare_parameter<string>("scan_topic","/scan");
         this->declare_parameter<string>("grid_topic", "/local_map");
         this->declare_parameter<int>("horizon",40);
         this->declare_parameter<double>("dt",0.05);
-        this->declare_parameter<double>("v_max", 6.5);
+        this->declare_parameter<double>("v_max", 10.5);
         this->declare_parameter<double>("v_min", 0.5);
         this->declare_parameter<double>("max_steering_limit", 0.45);
         this->declare_parameter<double>("max_steering_vel", 3.2);
@@ -101,6 +104,7 @@ RMPC(const std::string &node_name) : rclcpp::Node(node_name){
         this->get_parameter("drive_topic",drive_topic);
         this->get_parameter("scan_topic", scan_topic);
         this->get_parameter("grid_topic", grid_topic);
+        this->get_parameter("opp_odom_topic", opp_odom_topic);
         v_max = this->get_parameter("v_max").as_double();
         v_min = this->get_parameter("v_min").as_double();
         max_steering_limit = this->get_parameter("max_steering_limit").as_double();
@@ -114,6 +118,10 @@ RMPC(const std::string &node_name) : rclcpp::Node(node_name){
     odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
       odom_topic, 1, [this](const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
         this->odomCallback(pose_msg);
+      });
+      opp_odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
+      opp_odom_topic, 1, [this](const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
+        this->oppOdomCallback(pose_msg);
       });
     // scan_subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
     //   scan_topic, 1, [this](const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg){
@@ -190,14 +198,19 @@ problem_params.car.w.slip = 1000.0f;
 problem_params.car.w.slip_threshold_f = 0.15f;
 problem_params.car.w.slip_threshold_r = 0.15f;
 problem_params.car.w.max_slip_cost = 5000.0f;
-    auto result = rmpc::Controller<rmpc_f1tenth::F1TenthGrid>::create(cfg, problem_params);
+problem_params.car_radius = 0.1016;// need to get from params.yaml // 0.1016 m
+problem_params.clearance = 0.25f;                                  
+problem_params.hit_cost = 20000.0f;
+problem_params.n_obstacles = 0;
+
+auto result = rmpc::Controller<rmpc_f1tenth::F1TenthGrid>::create(cfg, problem_params);
 
 if (result.isError()) {
     // result.error() returns a const char* explaining exactly what failed in the config
     RCLCPP_ERROR(this->get_logger(), "Failed to initialize CUDA MPC: %s", result.error());
 } else {
     // Unpack the value and move the unique_ptr into your class member
-    rmpc_ctrl_ = std::move(result.value());
+    this->rmpc_ctrl_ = std::move(result.value());
     RCLCPP_INFO(this->get_logger(), "GPU RMPC Controller initialized successfully.");
 }
       RCLCPP_INFO(this->get_logger(), "%s Node Initialsed...", node_name.c_str());
@@ -251,10 +264,10 @@ void load_centerline(const std::string& file_path, float target_speed = 4.0f) {
         return;
     }
 
-    reference_path_.resize(N);
+    this->reference_path_.resize(N);
 
     
-   reference_path_[0].s = 0.0f;
+   this->reference_path_[0].s = 0.0f;
     std::vector<float> segment_ds(N);
 
     // Compute segment lengths, headings, and accumulated 's' via euclideanDistance
@@ -267,7 +280,7 @@ void load_centerline(const std::string& file_path, float target_speed = 4.0f) {
         );
 
         segment_ds[i] = static_cast<float>(dist);
-        reference_path_[i].heading = static_cast<float>(theta);
+        this->reference_path_[i].heading = static_cast<float>(theta);
 
         // Accumulate distance along the track
         if (i + 1 < N) {
@@ -494,7 +507,7 @@ void odomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
     // Clamp speed to prevent Pacejka divide-by-zero NaNs
     float safe_vx = std::max(this->v_min, vx);  
     problem_params.car.vx = safe_vx;
-
+    problem_params.track_length = reference_path_.back().s;
     rmpc_ctrl_->setParams(this->problem_params);
     rmpc_f1tenth::F1TenthGrid::State current_state = {s, d, yaw_error, vy, yaw_rate};
 
@@ -574,7 +587,7 @@ for (int step = 0; step < this->horizon; ++step) {
     "max_k : %.2f, safe_corner_speed: %.2f", max_k, safe_corner_speed );
         // 3. Clamp target velocity to your configured min/max speeds
         
-        double raw_target_velocity = std::clamp((double)safe_corner_speed, this->v_min , this->v_max);
+        double raw_target_velocity = std::clamp(static_cast<double>(safe_corner_speed), this->v_min , this->v_max);
          RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
     "raw_target_vl: %.2f" ,raw_target_velocity);
         // Allow 5.0 m/s^2 acceleration on straights
@@ -606,6 +619,26 @@ for (int step = 0; step < this->horizon; ++step) {
     
 
     this->drive_publisher_->publish(drive_msg);
+}
+void oppOdomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
+     // Pose extraction, conversion from quaternion to euler angle
+        double x_opp, y_opp, yaw, vx, vy, yaw_rate;
+        extractPose(pose_msg, x_opp, y_opp, yaw, vx, vy, yaw_rate);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "opp_x: %.2f, opp_y: %.2f, opp_yaw: %.2f, opp_vx : %.2f, opp_vy : %.2f, opp_yaw_rate : %.2f", x_opp, y_opp, vx, vy, yaw_rate);
+    // Convert the coordiantes to frenet coorrdiantes
+    float s_opp, d_opp, yaw_error, kappa;
+    globalToFrenet(x_opp, y_opp, yaw, s_opp, d_opp, yaw_error, kappa);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    "opp_s: %.2f, opp_d: %.2f, opp_yaw: %.2f, opp_yaw_err : %.2f, opp_curv : %.2f", s_opp, d_opp , yaw, yaw_error, kappa);
+
+    // When opponent car is active:
+this->problem_params.n_obstacles = 1;
+this->problem_params.obstacles[0].s = s_opp;
+this->problem_params.obstacles[0].d = d_opp;
+// Exact bounding radius enclosing opponent car's wheelbase (0.3302m) and width (0.2032m)
+this->problem_params.obstacles[0].radius = 0.3f;
+
 }
 ~RMPC(){
     RCLCPP_INFO(this->get_logger(), "Destroying Node...");
