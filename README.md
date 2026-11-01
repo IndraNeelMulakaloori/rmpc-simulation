@@ -20,31 +20,24 @@ Simulation validation and testing utilise [f1tenth_gym_ros](https://github.com/f
 ### BibTeX
 
 ```bibtex
-@article{muraleedharan2022realtime,
-  author    = {Muraleedharan, Arun and Okuda, Hiroyuki and Suzuki, Tatsuya},
-  journal   = {IEEE Transactions on Intelligent Vehicles}, 
-  title     = {Real-Time Implementation of Randomized Model Predictive Control for Autonomous Driving}, 
-  year      = {2022},
-  volume    = {7},
-  number    = {1},
-  pages     = {86--97},
-  doi       = {10.1109/TIV.2021.3062730}
-}
-
-@inproceedings{muraleedharan2025racing,
-  author    = {Muraleedharan, Arun and Sim{\~o}es, Ivo and Pau, Giovanni},
-  title     = {Randomized Model Predictive Control for Autonomous Racing},
-  booktitle = {2025 IEEE Intelligent Vehicles Symposium (IV)},
-  year      = {2025}
+@article{Muraleedharan_Real-Time_Implementation_of_2022,
+author = {Muraleedharan, Arun and Okuda, Hiroyuki and Suzuki, Tatsuya},
+doi = {10.1109/TIV.2021.3062730},
+journal = {IEEE Transactions on Intelligent Vehicles},
+number = {1},
+pages = {11},
+title = {{Real-Time Implementation of Randomized Model Predictive Control for Autonomous Driving}},
+volume = {7},
+year = {2022}
 }
 
 @inproceedings{okelly2020f1tenth,
-  title     = {F1TENTH: An Open-source Evaluation Environment for Continuous Control and Reinforcement Learning},
-  author    = {O'Kelly, Matthew and Zheng, Hongrui and Karthik, Dhruv and Mangharam, Rahul},
-  booktitle = {NeurIPS 2019 Competition and Demonstration Track},
-  pages     = {77--89},
-  year      = {2020},
-  organization = {PMLR}
+  title={F1TENTH: An Open-source Evaluation Environment for Continuous Control and Reinforcement Learning},
+  author={O’Kelly, Matthew and Zheng, Hongrui and Karthik, Dhruv and Mangharam, Rahul},
+  booktitle={NeurIPS 2019 Competition and Demonstration Track},
+  pages={77--89},
+  year={2020},
+  organization={PMLR}
 }
 ```
 
