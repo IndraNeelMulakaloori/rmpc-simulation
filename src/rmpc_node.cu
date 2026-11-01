@@ -58,7 +58,9 @@ std::vector<Waypoint> reference_path_; // This is laoded from CSV
     
     double max_steering_limit;
     double max_steering_vel;
-    int last_closest_idx = 0;
+    // Trackign last chose index for a shrot window to avodi shared state bug
+    int ego_closest_idx = 0;
+    int opp_closest_idx = 0;
     // Controller 
     std::unique_ptr<rmpc::Controller<rmpc_f1tenth::F1TenthGrid>> rmpc_ctrl_;
     float current_steering_ = 0.0f;
@@ -199,7 +201,7 @@ problem_params.car.w.slip_threshold_f = 0.15f;
 problem_params.car.w.slip_threshold_r = 0.15f;
 problem_params.car.w.max_slip_cost = 5000.0f;
 problem_params.car_radius = 0.1016;// need to get from params.yaml // 0.1016 m
-problem_params.clearance = 0.25f;                                  
+problem_params.clearance = 0.30f;                                  // 8 cm safety margin
 problem_params.hit_cost = 20000.0f;
 problem_params.n_obstacles = 0;
 
@@ -439,23 +441,23 @@ void extractPose(const nav_msgs::msg::Odometry::ConstPtr &pose_msg, double &x_ca
         
     }
 void globalToFrenet(float car_x, float car_y, float car_yaw, 
-                      float &s, float &d, float &yaw_error, float &kappa) {
+                      float &s, float &d, float &yaw_error, float &kappa, int &last_closest_idx) {
     if (reference_path_.empty()) return;
 
     
     int num_waypoints = reference_path_.size();
 
-    int closest_idx = this->last_closest_idx;
+    int closest_idx = last_closest_idx;
     float min_dist = 1e9; 
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
-    "last_closest_idx : %d", closest_idx);
+    // RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+    // "last_closest_idx : %d", closest_idx);
     // Search strictly forward along the track (e.g., up to 30 waypoints ahead) 
     // plus a small backward buffer (-5) for minor slips.
     int search_back = 5;
     int search_ahead = 30;
 
     for (int i = -search_back; i <= search_ahead; ++i) {
-        int idx = (this->last_closest_idx + i) % num_waypoints;
+        int idx = (last_closest_idx + i) % num_waypoints;
     //     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 10, 
     // "idx : %d", idx);
         if (idx < 0) {
@@ -474,11 +476,11 @@ void globalToFrenet(float car_x, float car_y, float car_yaw,
     
     
    
-this->last_closest_idx = closest_idx;
-RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
-    "last_closest_idx_latest : %d", this->last_closest_idx);
+    last_closest_idx = closest_idx;
+// RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+//     "last_closest_idx_latest : %d", this->last_closest_idx);
 
-     const Waypoint& wp = reference_path_[this->last_closest_idx];
+     const Waypoint& wp = reference_path_[last_closest_idx];
     // Compute Cross-Track Error (d) and Progress (s)
     float dx = car_x - wp.x;
     float dy = car_y - wp.y;
@@ -500,7 +502,7 @@ void odomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
     "x: %.2f, y: %.2f, yaw: %.2f, vx : %.2f, vy : %.2f, yaw_rate : %.2f", x_car, y_car, vx, vy, yaw_rate);
     // Convert the coordiantes to frenet coorrdiantes
     float s, d, yaw_error, kappa;
-    globalToFrenet(x_car, y_car, yaw, s, d, yaw_error, kappa);
+    globalToFrenet(x_car, y_car, yaw, s, d, yaw_error, kappa, this->ego_closest_idx);
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
     "State -> s: %.2f, d: %.2f, yaw: %.2f, yaw_err : %.2f, cuv : %.2f", s, d, yaw, yaw_error, kappa);
     // current state frenet coordiantes
@@ -517,21 +519,21 @@ void odomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
     std::vector<rmpc_f1tenth::F1TenthGrid::Reference> reference_horizon(this->horizon);
 
     float track_length = reference_path_.back().s;
-    size_t search_idx = this->last_closest_idx;
+    size_t search_idx = this->ego_closest_idx;
     size_t num_wp = reference_path_.size();
 
 for (int step = 0; step < this->horizon; ++step) {
         float s_target = s + (step * safe_vx * dt);
-        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
-    "safe_vx: %.2f, s_target : %.2f", safe_vx,s_target);
+        // RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+        // "safe_vx: %.2f, s_target : %.2f", safe_vx,s_target);
    
         s_target = std::fmod(s_target, track_length);
-        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
-    "safe_vx: %.2f, s_target : %.2f", safe_vx,s_target);
+        // RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+        // "safe_vx: %.2f, s_target : %.2f", safe_vx,s_target);
    
         if (s_target < 0.0f) s_target += track_length;
-        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
-    "safe_vx: %.2f, s_target : %.2f", safe_vx,s_target);
+        // RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+        // "safe_vx: %.2f, s_target : %.2f", safe_vx,s_target);
    
 
         // Advance sequentially along waypoints from search_idx
@@ -583,13 +585,13 @@ for (int step = 0; step < this->horizon; ++step) {
         float friction_coeff = 0.523f; // From your params.yaml
         float gravity = 9.81f;
         float safe_corner_speed = std::sqrt((friction_coeff * gravity) / (max_k+ 1e-4f));
-        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
-    "max_k : %.2f, safe_corner_speed: %.2f", max_k, safe_corner_speed );
+        // RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+        // "max_k : %.2f, safe_corner_speed: %.2f", max_k, safe_corner_speed );
         // 3. Clamp target velocity to your configured min/max speeds
         
         double raw_target_velocity = std::clamp(static_cast<double>(safe_corner_speed), this->v_min , this->v_max);
-         RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
-    "raw_target_vl: %.2f" ,raw_target_velocity);
+        //  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
+        // "raw_target_vl: %.2f" ,raw_target_velocity);
         // Allow 5.0 m/s^2 acceleration on straights
         float max_accel = 7.51f; 
         // Allow 9.0 m/s^2 braking into turn-in (within friction circle limits: mu * g ~ 0.523 * 9.81 ~ 5.13 m/s^2 lateral, ~8-9 m/s^2 longitudinal)
@@ -628,7 +630,7 @@ void oppOdomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
     "opp_x: %.2f, opp_y: %.2f, opp_yaw: %.2f, opp_vx : %.2f, opp_vy : %.2f, opp_yaw_rate : %.2f", x_opp, y_opp, vx, vy, yaw_rate);
     // Convert the coordiantes to frenet coorrdiantes
     float s_opp, d_opp, yaw_error, kappa;
-    globalToFrenet(x_opp, y_opp, yaw, s_opp, d_opp, yaw_error, kappa);
+    globalToFrenet(x_opp, y_opp, yaw, s_opp, d_opp, yaw_error, kappa, this->opp_closest_idx);
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
     "opp_s: %.2f, opp_d: %.2f, opp_yaw: %.2f, opp_yaw_err : %.2f, opp_curv : %.2f", s_opp, d_opp , yaw, yaw_error, kappa);
 

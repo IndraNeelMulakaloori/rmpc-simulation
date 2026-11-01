@@ -54,8 +54,8 @@ struct F1TenthGrid {
   }
 // Two-disc axle collision check from /helper/randomized-mpc/examples/car_obstacles/problem.cuh
   RMPC_HD static bool collides(const State& x, const Params& p) {
-    const float c = cosf(x.yaw);
-    const float sn = sinf(x.yaw);
+    const float cos = cosf(x.yaw);
+    const float sin = sinf(x.yaw);
     const float axle[2] = {p.car.lf, -p.car.lr};
 
     for (int i = 0; i < p.n_obstacles; ++i) {
@@ -64,12 +64,12 @@ struct F1TenthGrid {
       const float reach_sq = reach * reach;
 
       for (float a : axle) {
-        float ds = x.s + a * c - o.s;
+        float ds = x.s + a * cos - o.s;
         // Track periodic boundary wrap-around
         if (p.track_length > 0.0f && ds > 0.5f * p.track_length) {
           ds = p.track_length - ds;
         }
-        const float dd = x.d + a * sn - o.d;
+        const float dd = x.d + a * sin - o.d;
         if (ds * ds + dd * dd < reach_sq) {
           return true;
         }
