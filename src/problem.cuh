@@ -47,7 +47,7 @@ struct F1TenthGrid {
     float start_yaw_err;
     float start_k;
   };
-  // Using Exsiitng step() from examples
+  // Using Exsiting step() from examples
   RMPC_HD static State step(const State& x, float steer, const Reference& ref,
                             const Params& p, float dt) {
     return CarSteering::step(x, steer, ref, p.car, dt);
@@ -79,35 +79,44 @@ struct F1TenthGrid {
   }
   // O(1) Grid Obstacle look up.
   RMPC_HD static bool checkGrid(const State& x, const Params& p) {
-    // float ds = x.s - p.start_s; 
-    // float k = p.start_k;
+    if(p.cuda_occupancy_grid == nullptr)
+        return false;
+    float ds = x.s - p.start_s; 
+    // Track wrap around logic
+    // 
+    if (p.track_length > 0.0f) {
+      if (ds > 0.5f * p.track_length) ds -= p.track_length;
+      else if (ds < -0.5f * p.track_length) ds += p.track_length;
+    }
+    float k = p.start_k;
 
-    // // 1. Find the target point on the curved centerline
-    // float theta = k * ds;
-    // float x_c = (fabsf(k) > 1e-4f) ? (sinf(theta) / k) : ds;
-    // float y_c = (fabsf(k) > 1e-4f) ? ((1.0f - cosf(theta)) / k) : 0.0f;
+    // Find the target point on the curved centerline
+    float theta = k * ds;
+    float x_c = (fabsf(k) > 1e-4f) ? (sinf(theta) / k) : ds;
+    float y_c = (fabsf(k) > 1e-4f) ? ((1.0f - cosf(theta)) / k) : 0.0f;
 
-    // // 2. Shift to the absolute lateral offset (x.d)
-    // float dx_fc = x_c - x.d * sinf(theta);
-    // float dy_fc = y_c + x.d * cosf(theta);
+    // Shift to the absolute lateral offset (x.d)
+    float dx_fc = x_c - x.d * sinf(theta);
+    float dy_fc = y_c + x.d * cosf(theta);
 
-    // // 3. Shift origin to the physical car's position (0, start_d)
-    // float dx_car = dx_fc;
-    // float dy_car = dy_fc - p.start_d;
+    // Shift origin to the physical car's position (0, start_d)
+    float dx_car = dx_fc;
+    float dy_car = dy_fc - p.start_d;
 
-    // // 4. Rotate by the car's yaw error to align with LIDAR X-Y axes
-    // float cos_y = cosf(p.start_yaw_err);
-    // float sin_y = sinf(p.start_yaw_err);
+    // Rotate by the car's yaw error to align with LIDAR X-Y axes
+    float cos_y = cosf(p.start_yaw_err);
+    float sin_y = sinf(p.start_yaw_err);
     
-    // float x_cart = dx_car * cos_y + dy_car * sin_y;
-    // float y_cart = -dx_car * sin_y + dy_car * cos_y;
+    float x_cart = dx_car * cos_y + dy_car * sin_y;
+    float y_cart = -dx_car * sin_y + dy_car * cos_y;
     
-    // int grid_x = static_cast<int>(x_cart / p.resolution) + p.x_offset;
-    // int grid_y = static_cast<int>(y_cart / p.resolution) + p.y_offset;
+    int grid_x = static_cast<int>(x_cart / p.resolution) + p.x_offset;
+    int grid_y = static_cast<int>(y_cart / p.resolution) + p.y_offset;
 
-    // if (grid_x < 0 || grid_x >= p.columns || grid_y < 0 || grid_y >= p.rows) return false;
-    // int index = grid_x + (grid_y * p.columns);
-    // return (p.cuda_occupancy_grid[index] > 50.0f);
+    if (grid_x < 0 || grid_x >= p.columns || grid_y < 0 || grid_y >= p.rows) return false;
+    int index = grid_x + (grid_y * p.columns);
+    return (p.cuda_occupancy_grid[index] > 50.0f); // Even this->occupancy_grid[inflate_index] = 100; 
+                                                // its better to use > than strict check == 100
   }
 
   RMPC_HD static float stageCost(const State& x, float steer,
@@ -118,7 +127,7 @@ struct F1TenthGrid {
     float base_cost = CarSteering::stageCost(x, steer, steer_prev, ref, p.car, k, n);
     
     // Penalising the trajecotry if ti hits teh obstacle
-    float hit_cost = collides(x, p) ? (p.hit_cost / (float)n) : 0.0f;
+    float hit_cost = checkGrid(x,p) ? (p.hit_cost / (float)n) : 0.0f;
     
     return base_cost + hit_cost;
   }

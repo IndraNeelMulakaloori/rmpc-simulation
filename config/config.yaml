@@ -10,12 +10,20 @@ rmpc_node:
     # RHC params
     horizon: 100
     dt: 0.02
+    samples : 5000
 
+
+    ## Grid parameters
+    resolution :  0.05
+    width : 3.0
+    height  : 3.0
 
     ## Steerign and velocity profiles  
-    v_max : 13.0
+    v_max : 10.5
     v_min : 0.5              
     wheel_base : 0.33 
     min_steering_limit : -0.4189
     max_steering_limit : 0.4189
     max_steering_vel: 3.2
+
+
