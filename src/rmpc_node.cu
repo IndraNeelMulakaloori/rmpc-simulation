@@ -46,12 +46,8 @@ std::vector<Waypoint> reference_path_; // This is laoded from CSV
     // RHC params
     int horizon;
     double dt;
-    //  Dynamic Lookahead & Velocity Tuning Parameters 
-    double lookahead_distance; // Will now be overwritten dynamically
-    double k_ld;               // Lookahead gain (seconds of forward travel)
-    double lookahead_min ;      // Minimum lookahead for tight corners
-    double lookahead_max;      // Maximum lookahead for high-speed straights
-    
+    int samples;
+  
     double v_max ;              // Maximum straightaway speed
     double v_min ;              // Minimum cornering speed
     double wheel_base ; 
@@ -63,22 +59,24 @@ std::vector<Waypoint> reference_path_; // This is laoded from CSV
     int opp_closest_idx = 0;
     // Controller 
     std::unique_ptr<rmpc::Controller<rmpc_f1tenth::F1TenthGrid>> rmpc_ctrl_;
-    float current_steering_ = 0.0f;
-    float current_velocity_cmd_ = 0.0f;
+    float current_steering_ = 0.0;
+    float current_velocity_cmd_ = 0.0;
+    float min_forward_dist_ = 100.0;
     // Grid params
-    double resolution = 0.05;
-    double width = 3.0;
-    double height = 3.0;
-    int rows = static_cast<int>(height/resolution); // discretize to rows and ols
-    int columns = static_cast<int>(width/resolution);
-    int x_offset = 0; // offset because we wanted to sit at the first row and utilize complete fro longitudianl direction
-    int y_offset = columns/2;
+    double resolution ;
+    double width ;
+    double height ;
+    int rows ; 
+    int columns ; 
+    int x_offset ;  
+    int y_offset ; 
     std::vector<int8_t> occupancy_grid;
-    double collision_penalty = 1000;
     bool map_initialized_ = false;
+     // 2D Square Inflation
+        int inflation_radius = 5;
     // CUDA params
     int8_t* cuda_occupancy_grid_{nullptr};
-    size_t allocation_size_ = rows * columns * sizeof(int8_t);
+    size_t allocation_size_ ;
     rmpc_f1tenth::F1TenthGrid::Params problem_params;
     // Publishers and subscribers
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_ ;
@@ -97,10 +95,15 @@ RMPC(const std::string &node_name) : rclcpp::Node(node_name){
         this->declare_parameter<string>("grid_topic", "/local_map");
         this->declare_parameter<int>("horizon",40);
         this->declare_parameter<double>("dt",0.05);
+        this->declare_parameter<int>("samples",2000);
         this->declare_parameter<double>("v_max", 10.5);
         this->declare_parameter<double>("v_min", 0.5);
         this->declare_parameter<double>("max_steering_limit", 0.45);
         this->declare_parameter<double>("max_steering_vel", 3.2);
+        this->declare_parameter<double>("resolution", 0.05);
+        this->declare_parameter<double>("width", 3.0);
+        this->declare_parameter<double>("height", 3.0);
+        
         // Fetchign parameters from yaml
         this->get_parameter("odom_topic", odom_topic);
         this->get_parameter("drive_topic",drive_topic);
@@ -113,22 +116,33 @@ RMPC(const std::string &node_name) : rclcpp::Node(node_name){
         max_steering_vel = this->get_parameter("max_steering_vel").as_double();
         horizon = this->get_parameter("horizon").as_int();
         dt = this->get_parameter("dt").as_double();
+        samples = this->get_parameter("samples").as_int();
+        resolution = this->get_parameter("resolution").as_double();
+        width = this->get_parameter("width").as_double();
+        height = this->get_parameter("height").as_double();
 
-   
+    
+
+
+        rows = static_cast<int>(height/resolution); // discretize to rows and ols
+        columns = static_cast<int>(width/resolution);
+        x_offset = 0; // offset because we wanted to sit at the first row and utilize complete fro longitudianl direction
+        y_offset = rows/2;
+        allocation_size_ = rows * columns * sizeof(int8_t);
     
     // ROS Publishers &  subscribers
     odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
       odom_topic, 1, [this](const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
         this->odomCallback(pose_msg);
       });
-      opp_odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      opp_odom_topic, 1, [this](const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
-        this->oppOdomCallback(pose_msg);
-      });
-    // scan_subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-    //   scan_topic, 1, [this](const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg){
-    //     this->scan_callback(scan_msg);
+    //   opp_odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
+    //   opp_odom_topic, 1, [this](const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
+    //     this->oppOdomCallback(pose_msg);
     //   });
+    scan_subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+      scan_topic, 1, [this](const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg){
+        this->scanCallback(scan_msg);
+      });
       drive_publisher_ = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(drive_topic, 10);
       grid_publisher_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(grid_topic, 10);
 
@@ -148,7 +162,7 @@ load_centerline(centerline_path);
     cfg.u_max = max_steering_limit;      // Max steering angle (radians)
     cfg.u_min = -max_steering_limit ;   // Min steering angle (radians)
     cfg.du_max = max_steering_vel;     // Max steering velocity (radians/sec)
-    cfg.n_samples = 5000;      // Number of parallel GPU rollouts
+    cfg.n_samples = samples;      // Number of parallel GPU rollouts
     cfg.n_basis = 7;           // 7 DCT frequency basis curves
     cfg.warm_start = true;
     cfg.seed = 70997;
@@ -205,6 +219,23 @@ problem_params.clearance = 0.30f;                                  // 8 cm safet
 problem_params.hit_cost = 20000.0f;
 problem_params.n_obstacles = 0;
 
+
+
+// Allocate device memory for local occupancy grid
+cudaError_t err = cudaMalloc(&cuda_occupancy_grid_, allocation_size_);
+if (err != cudaSuccess) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to allocate cuda_occupancy_grid_: %s", cudaGetErrorString(err));
+}
+cudaMemset(cuda_occupancy_grid_, 0, allocation_size_);
+RCLCPP_INFO(this->get_logger(), "Allocated CUDA memory" );
+// Populate grid parameters into problem_params
+problem_params.cuda_occupancy_grid = this->cuda_occupancy_grid_;
+problem_params.resolution = this->resolution;
+problem_params.columns = this->columns;
+problem_params.rows = this->rows;
+problem_params.x_offset = this->x_offset;
+problem_params.y_offset = this->y_offset;
+
 auto result = rmpc::Controller<rmpc_f1tenth::F1TenthGrid>::create(cfg, problem_params);
 
 if (result.isError()) {
@@ -216,6 +247,7 @@ if (result.isError()) {
     RCLCPP_INFO(this->get_logger(), "GPU RMPC Controller initialized successfully.");
 }
       RCLCPP_INFO(this->get_logger(), "%s Node Initialsed...", node_name.c_str());
+
 
 }
 
@@ -320,12 +352,12 @@ std::pair<double,double> euclideanDistance(const std::pair<double,double> &Point
 
     return {distance,theta};
 }
-bool bounding_box(const int &x_index, const int &y_index){
+bool boundingBox(const int &x_index, const int &y_index){
     if(x_index < 0 || x_index >= this->columns || y_index < 0 || y_index >= this->rows)
             return false;
         return true;
 }
-std::pair<int,int> convertartesian_to_grid(const double &x_coordinate, const double &y_coordinate ){
+std::pair<int,int> convertCartesianToGrid(const double &x_coordinate, const double &y_coordinate ){
     
     int x_index = static_cast<int>(x_coordinate / this->resolution) + this->x_offset;
     int y_index = static_cast<int>(y_coordinate / this->resolution) + this->y_offset;
@@ -334,87 +366,95 @@ std::pair<int,int> convertartesian_to_grid(const double &x_coordinate, const dou
 }
 
 
-// void visualize_occupancy_grid(const std_msgs::msg::Header& scan_header) {
-//         nav_msgs::msg::OccupancyGrid grid_msg;
+void visualizeOccupancyGrid(const std_msgs::msg::Header& scan_header) {
+        nav_msgs::msg::OccupancyGrid grid_msg;
 
-//         grid_msg.header.stamp = scan_header.stamp;
-//         grid_msg.header.frame_id = scan_header.frame_id; 
+        grid_msg.header.stamp = scan_header.stamp;
+        grid_msg.header.frame_id = scan_header.frame_id; 
 
-//         grid_msg.info.resolution = this->resolution; 
-//         grid_msg.info.width = this->columns;         
-//         grid_msg.info.height = this->rows;           
+        grid_msg.info.resolution = this->resolution; 
+        grid_msg.info.width = this->columns;         
+        grid_msg.info.height = this->rows;           
 
-//         grid_msg.info.origin.position.x = -(this->x_offset * this->resolution); 
-//         grid_msg.info.origin.position.y = -(this->y_offset * this->resolution);
-//         grid_msg.info.origin.position.z = 0.0;
-//         grid_msg.info.origin.orientation.w = 1.0; 
+        grid_msg.info.origin.position.x = -(this->x_offset * this->resolution); 
+        grid_msg.info.origin.position.y = -(this->y_offset * this->resolution);
+        grid_msg.info.origin.position.z = 0.0;
+        grid_msg.info.origin.orientation.w = 1.0; 
 
         
-//         grid_msg.data = this->occupancy_grid;
-//         grid_publisher_->publish(grid_msg);
+        grid_msg.data = this->occupancy_grid;
+        grid_publisher_->publish(grid_msg);
 
-//         RCLCPP_DEBUG(this->get_logger(), "Published local occupancy grid. Resolution: %.2f", this->resolution);
-//     }
+        RCLCPP_DEBUG(this->get_logger(), "Published local occupancy grid. Resolution: %.2f", this->resolution);
+    }
 
-// void scan_callback(const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg){
-//     this->occupancy_grid.assign(this-> rows * this-> columns, 0);
+void scanCallback(const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg){
+    // RCLCPP_INFO(this->get_logger(), "Inside ScanCallback");
+    this->occupancy_grid.assign(this-> rows * this-> columns, 0);
+    this->min_forward_dist_ = 100.0f; // reset everytime so that it woudlnt clamp
 
-//     // Iterating through ranges
-//     for(size_t i = 0 ; i < scan_msg->ranges.size() ; i++){
-//         // filtering invalid data
-//         if(isinf(scan_msg->ranges[i]) || isnan(scan_msg->ranges[i]) || scan_msg->ranges[i] > scan_msg->range_max)
-//             continue;
-//         // convertign the range idnex itn oan angle
-//         float angle = scan_msg->angle_min + (i* scan_msg->angle_increment);  
-
-//         // covnertign polar coordiantes to cartesioan cooridnates
-//         float x_cart = scan_msg->ranges[i] * cos(angle);
-//         float y_cart = scan_msg->ranges[i] * sin(angle);
-
-//         // convertign cartesian coordianes to our matrix gird 
-//         // int x_ind = static_cast<int>(x_cart / this->resolution) + this->x_offset;
-//         // int y_ind = static_cast<int>(y_cart / this->resolution) + this->y_offset;
-//         std::pair<int,int> grid_indices = convertartesian_to_grid(
-//             (double) x_cart, (double) y_cart
-//         );
-
-//         // bodungin box 
-//         if(bounding_box(grid_indices.first,grid_indices.second) == false)
-//             continue;
+    // Iterating through ranges
+    for(size_t i = 0 ; i < scan_msg->ranges.size() ; i++){
+        // filtering invalid data
+        if(isinf(scan_msg->ranges[i]) || isnan(scan_msg->ranges[i]) || scan_msg->ranges[i] > scan_msg->range_max)
+            continue;
+        // convertign the range idnex itn oan angle
+        float angle = scan_msg->angle_min + (i* scan_msg->angle_increment);  
+        
+        // covnertign polar coordiantes to cartesioan cooridnates
+        float x_cart = scan_msg->ranges[i] * cos(angle);
+        float y_cart = scan_msg->ranges[i] * sin(angle);
+        
 
 
-//         // 2D Square Inflation
-//         int inflation_radius = 5; 
+        // WINDOW CHECK: Directly ahead (0 < x < 5.0m) and within car lane (|y| < 0.25m) 
+        if (x_cart > 0.0f && x_cart < 5.0f && std::abs(y_cart) < 0.25f) {
+            this->min_forward_dist_ = std::min(this->min_forward_dist_, x_cart);
+        }
 
-//         for (int r = -inflation_radius; r <= inflation_radius; r++) {
-//             for (int c = -inflation_radius; c <= inflation_radius; c++) {
+        // convertign cartesian coordianes to our matrix gird 
+        // int x_ind = static_cast<int>(x_cart / this->resolution) + this->x_offset;
+        // int y_ind = static_cast<int>(y_cart / this->resolution) + this->y_offset;
+        std::pair<int,int> grid_indices = convertCartesianToGrid(
+            static_cast<double> (x_cart), static_cast<double> (y_cart)
+        );
+
+        // bodungin box 
+        if(boundingBox(grid_indices.first,grid_indices.second) == false)
+            continue;
+
+
+        
+
+        for (int r = -this->inflation_radius; r <= this->inflation_radius; r++) {
+            for (int c = -this->inflation_radius; c <= this->inflation_radius; c++) {
                 
-//                 int inflate_x = grid_indices.first + r;
-//                 int inflate_y = grid_indices.second + c;
+                int inflate_x = grid_indices.first + r;
+                int inflate_y = grid_indices.second + c;
 
-//                 // Ensure the newly inflated cell is still inside the grid bounds
-//                 if (inflate_x >= 0 && inflate_x < this->columns && inflate_y >= 0 && inflate_y < this->rows) {
+                // Ensure the newly inflated cell is still inside the grid bounds
+                if (boundingBox(inflate_x, inflate_y)) {
                     
-//                     // Flatten 2D to 1D only for the valid inflated cells
-//                     int inflate_index = inflate_x  + (inflate_y * this->columns);
-//                     this->occupancy_grid[inflate_index] = 100; // RVIZ requries 100
-//                 }
-//             }
-//         }
+                    // Flatten 2D to 1D only for the valid inflated cells
+                    int inflate_index = inflate_x  + (inflate_y * this->columns);
+                    this->occupancy_grid[inflate_index] = 100; // RVIZ requries 100
+                }
+            }
+        }
 
 
-//     }
+    }
 
-//     // Visualise
-//     visualize_occupancy_grid(scan_msg->header);
+    // Visualise
+    visualizeOccupancyGrid(scan_msg->header);
 
-//     // Stream to GPU Memory
+    // Stream to GPU Memory
 
-//     cudaMemcpy(cuda_occupancy_grid_, this->occupancy_grid.data(), 
-//     this->occupancy_grid.size() * sizeof(int8_t), 
-//     cudaMemcpyHostToDevice);
-//    this-> map_initialized_ = true;
-// }
+    cudaMemcpy(cuda_occupancy_grid_, this->occupancy_grid.data(), 
+    this->occupancy_grid.size() * sizeof(int8_t), 
+    cudaMemcpyHostToDevice);
+   this-> map_initialized_ = true;
+}
 
 void extractPose(const nav_msgs::msg::Odometry::ConstPtr &pose_msg, double &x_car, double &y_car, double &yaw, double &vx, double &vy, double &yaw_rate)
     {   
@@ -510,14 +550,21 @@ void odomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
     float safe_vx = std::max(this->v_min, vx);  
     problem_params.car.vx = safe_vx;
     problem_params.track_length = reference_path_.back().s;
+
+
+    // Lidar projection grid prtobnplem allcoation 
+    problem_params.start_s = s;
+    problem_params.start_d = d;
+    problem_params.start_yaw_err = yaw_error;
+    problem_params.start_k = kappa;
+
+    // set params and retrive curretn state
     rmpc_ctrl_->setParams(this->problem_params);
     rmpc_f1tenth::F1TenthGrid::State current_state = {s, d, yaw_error, vy, yaw_rate};
 
     
-    
 
     std::vector<rmpc_f1tenth::F1TenthGrid::Reference> reference_horizon(this->horizon);
-
     float track_length = reference_path_.back().s;
     size_t search_idx = this->ego_closest_idx;
     size_t num_wp = reference_path_.size();
@@ -589,7 +636,8 @@ for (int step = 0; step < this->horizon; ++step) {
         // "max_k : %.2f, safe_corner_speed: %.2f", max_k, safe_corner_speed );
         // 3. Clamp target velocity to your configured min/max speeds
         
-        double raw_target_velocity = std::clamp(static_cast<double>(safe_corner_speed), this->v_min , this->v_max);
+        double raw_target_velocity = std::min(static_cast<double>(safe_corner_speed), static_cast<double>(this->min_forward_dist_));
+        raw_target_velocity = std::clamp(raw_target_velocity, this->v_min, this->v_max);
         //  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
         // "raw_target_vl: %.2f" ,raw_target_velocity);
         // Allow 5.0 m/s^2 acceleration on straights
@@ -634,15 +682,21 @@ void oppOdomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr &pose_msg){
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
     "opp_s: %.2f, opp_d: %.2f, opp_yaw: %.2f, opp_yaw_err : %.2f, opp_curv : %.2f", s_opp, d_opp , yaw, yaw_error, kappa);
 
-    // When opponent car is active:
-this->problem_params.n_obstacles = 1;
-this->problem_params.obstacles[0].s = s_opp;
-this->problem_params.obstacles[0].d = d_opp;
-// Exact bounding radius enclosing opponent car's wheelbase (0.3302m) and width (0.2032m)
-this->problem_params.obstacles[0].radius = 0.3f;
+//     // When opponent car is active:
+// this->problem_params.n_obstacles = 1;
+// this->problem_params.obstacles[0].s = s_opp;
+// this->problem_params.obstacles[0].d = d_opp;
+// // Exact bounding radius enclosing opponent car's wheelbase (0.3302m) and width (0.2032m)
+// this->problem_params.obstacles[0].radius = 0.3f;
 
 }
 ~RMPC(){
+    if (cuda_occupancy_grid_ != nullptr) {
+        cudaFree(cuda_occupancy_grid_);
+        cuda_occupancy_grid_ = nullptr;
+        RCLCPP_INFO(this->get_logger(), "Freed Occupancy grid from GPU");
+    }
+    
     RCLCPP_INFO(this->get_logger(), "Destroying Node...");
 }
 };

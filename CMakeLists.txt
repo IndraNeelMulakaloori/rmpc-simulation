@@ -55,6 +55,7 @@ install(TARGETS
 )
 install(PROGRAMS 
   scripts/rmpc_node.py
+  scripts/obstacles_spawner.py
   DESTINATION lib/${PROJECT_NAME}
 )
 install(DIRECTORY
