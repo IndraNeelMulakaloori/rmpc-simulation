@@ -73,7 +73,7 @@ std::vector<Waypoint> reference_path_; // This is laoded from CSV
     std::vector<int8_t> occupancy_grid;
     bool map_initialized_ = false;
      // 2D Square Inflation
-        int inflation_radius = 5;
+        int inflation_radius = 3;
     // CUDA params
     int8_t* cuda_occupancy_grid_{nullptr};
     size_t allocation_size_ ;
@@ -406,9 +406,9 @@ void scanCallback(const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg){
         float y_cart = scan_msg->ranges[i] * sin(angle);
         
 
-
+        
         // WINDOW CHECK: Directly ahead (0 < x < 5.0m) and within car lane (|y| < 0.25m) 
-        if (x_cart > 0.0f && x_cart < 5.0f && std::abs(y_cart) < 0.25f) {
+        if (x_cart > 0.0f && x_cart < this->width && std::abs(y_cart) < 0.25) {
             this->min_forward_dist_ = std::min(this->min_forward_dist_, x_cart);
         }
 
