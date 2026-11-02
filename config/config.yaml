@@ -15,12 +15,12 @@ rmpc_node:
 
     ## Grid parameters
     resolution :  0.05
-    width : 3.0
+    width : 6.0 ## higher the width, higher no of rows, more lidar vision
     height  : 3.0
 
     ## Steerign and velocity profiles  
     v_max : 10.5
-    v_min : 0.5              
+    v_min : 2.5              
     wheel_base : 0.33 
     min_steering_limit : -0.4189
     max_steering_limit : 0.4189
