@@ -7,13 +7,9 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(ament_cmake_python REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# Find ROS 2 packages
-
-
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(ackermann_msgs REQUIRED)
@@ -46,6 +42,7 @@ target_include_directories(rmpc_node PUBLIC
 ament_target_dependencies(
   rmpc_node 
   rclcpp 
+  ament_index_cpp
   nav_msgs 
   sensor_msgs 
   ackermann_msgs 
