@@ -1,0 +1,28 @@
+{
+    "metadata": {
+        "timestamp": "2026-11-03T02:18:47.680671",
+        "total_duration_sec": 70.73984789848328
+    },
+    "laps": {
+        "completed_count": 2,
+        "lap_times_sec": [
+            34.768091678619385,
+            32.6198935508728
+        ],
+        "mean_lap_sec": 33.693992614746094,
+        "std_lap_sec": 1.074099063873291,
+        "fastest_lap_sec": 32.6198935508728
+    },
+    "safety": {
+        "min_obstacle_margin_m": 10000.0,
+        "collision_detected": false
+    },
+    "timing_50hz": {
+        "target_period_ms": 20.0,
+        "mean_interval_ms": 7.370457476602056,
+        "std_interval_ms": 3.7973587390868815,
+        "p95_interval_ms": 15.122067928314207,
+        "p99_interval_ms": 16.694490909576416,
+        "worst_case_ms": 19.90962028503418
+    }
+}
