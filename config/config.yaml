@@ -1,7 +1,7 @@
 rmpc_node:
   ros__parameters:
     # map parameters
-    waypoints_file: 'waypoints/IMS_centerline.csv'
+    waypoints_file: 'maps/IMS/IMS_centerline.csv'
     # ROS 2 Topics
     odom_topic: '/ego_racecar/odom'
     drive_topic: '/drive'
@@ -27,7 +27,7 @@ rmpc_node:
       height: 3.0
       inflation_radius: 4
       lateral_clearance: 1
-      hit_cost: 35000.0
+      hit_cost: 20000.0
 
     # Speed & Actuation Limits
     speed_limits:

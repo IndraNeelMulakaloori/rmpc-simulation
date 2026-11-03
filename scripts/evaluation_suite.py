@@ -123,7 +123,7 @@ def main():
     parser = argparse.ArgumentParser(description="Offline RMPC ros2 bag Benchmark Processor")
     parser.add_argument('-b', '--bag_path', type=str, help="Path to recorded ros2 bag folder")
     parser.add_argument('--centerline', type=str,
-                        default='src/rmpc_f1tenth/waypoints/IMS_centerline.csv',
+                        default='src/rmpc_f1tenth/maps/IMS/IMS_centerline.csv',
                         help="Path to centerline CSV")
     parser.add_argument('--window', type=float, default=14.0,
                         help="Time window in seconds for the slalom plot")
