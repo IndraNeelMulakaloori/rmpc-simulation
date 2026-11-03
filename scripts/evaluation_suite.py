@@ -63,7 +63,7 @@ def read_bag(bag_path: str):
 
     return odom_msgs, drive_msgs
 
-def export_summary_metrics(output_dir, bag_path, t_odom, lap_times, min_gaps, drive_intervals_ms):
+def export_summary_metrics(output_dir, file_name, bag_path, t_odom, lap_times, min_gaps, drive_intervals_ms):
     # Structure the hierarchical JSON metrics dictionary
     metrics = {
         "metadata": {
@@ -92,13 +92,13 @@ def export_summary_metrics(output_dir, bag_path, t_odom, lap_times, min_gaps, dr
     }
 
     # Write JSON to the bag folder (or current directory)
-    json_path = os.path.join(output_dir, "benchmark_metrics.json")
+    json_path = os.path.join(output_dir, f"{file_name}_benchmark_metrics.json")
     with open(json_path, "w") as f:
         json.dump(metrics, f, indent=4)
     print(f"[SUCCESS] Exported JSON metrics to {json_path}")
 
     # (Optional) Append to a cumulative master CSV for comparing tuning runs
-    master_csv_path = os.path.join(output_dir, "benchmark_history.csv")
+    master_csv_path = os.path.join(output_dir, f"benchmark_history.csv")
     file_exists = os.path.isfile(master_csv_path)
 
     row = {
@@ -127,9 +127,12 @@ def main():
                         help="Path to centerline CSV")
     parser.add_argument('--window', type=float, default=14.0,
                         help="Time window in seconds for the slalom plot")
+    parser.add_argument('--filename', type=str, default='no_name', help="Name for the output results folder")
+    parser.add_argument('--obstacles', type=str, default='no', help="Include obstacles in the evaluation (default: no)")
     args = parser.parse_args()
+    file_name = args.filename
     package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    results_path = os.path.join(package_dir, 'results')
+    results_path = os.path.join(package_dir, 'results') 
     os.makedirs(results_path, exist_ok=True)
     print(f"Reading bag: {args.bag_path} ...")
     odom_data, drive_data = read_bag(args.bag_path)
@@ -175,19 +178,23 @@ def main():
     # Obstacle Distance Analysis
    ## Obstacle positions are hardcoded for the slalom benchmark.
    ## In a real scenario, these would be dynamically determined or loaded from a configuration.
-    obstacles = [
-        np.array([0.190728, -10.2845, 0.25]),
-        np.array([26.9882, 70.4085, 0.25]),
-        np.array([52.2316, 9.98813, 0.25]),
-    ]
-    car_radius = 0.20
-    car_positions = np.column_stack((x, y))
-    min_gaps = np.full(len(x), 10.0)
+    if args.obstacles.lower() == 'yes':
+        obstacles = [
+            np.array([0.190728, -10.2845, 0.25]),
+            np.array([26.9882, 70.4085, 0.25]),
+            np.array([52.2316, 9.98813, 0.25]),
+        ]
+        car_radius = 0.20
+        car_positions = np.column_stack((x, y))
+        min_gaps = np.full(len(x), 10.0)
+        for obs in obstacles:
+                    dist = np.linalg.norm(car_positions - obs[:2], axis=1) - (obs[2] + car_radius)
+                    min_gaps = np.minimum(min_gaps, dist)
+        
+    else:
+        min_gaps = np.full(len(x), 10000.0)
 
-    for obs in obstacles:
-        dist = np.linalg.norm(car_positions - obs[:2], axis=1) - (obs[2] + car_radius)
-        min_gaps = np.minimum(min_gaps, dist)
-
+        
     # Lap Times Detection
     lap_times = []
     if kdtree is not None and track_length > 0.0:
@@ -232,7 +239,7 @@ def main():
     axs[2].legend(loc='upper right', frameon=False, ncol=2)
     axs[2].set_ylim([-0.45, 0.45])
 
-    slalom_png = f"{results_path}/bag_slalom_benchmark.png"
+    slalom_png = f"{results_path}/{file_name}_bag_slalom_benchmark.png"
     plt.savefig(slalom_png, dpi=300, bbox_inches='tight')
     print(f"[SUCCESS] Saved slalom figure to {slalom_png}")
 
@@ -259,7 +266,7 @@ def main():
         axs2[1].legend()
         axs2[1].grid(True, linestyle=':', alpha=0.6)
 
-    timing_png = f"{results_path}/bag_timing_benchmark.png"
+    timing_png = f"{results_path}/{file_name}_bag_timing_benchmark.png"
     plt.savefig(timing_png, dpi=300, bbox_inches='tight')
     print(f"[SUCCESS] Saved timing figure to {timing_png}")
 
@@ -283,6 +290,7 @@ def main():
     
     export_summary_metrics(
         output_dir=results_path,
+        file_name=file_name,
         bag_path=args.bag_path,
         t_odom=t_odom,
         lap_times=lap_times,
