@@ -17,17 +17,42 @@ find_package(ament_cmake_python REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(ackermann_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 
 # This makes the header-only target rmpc::rmpc available
 add_subdirectory(helper/randomized-mpc)
 
-# Ros2 executable
-add_executable(rmpc_node src/rmpc_node.cu)
+# Include custom header files
+include_directories(include)
 
+# Ros2 executable
+add_executable(rmpc_node 
+  src/rmpc_node.cu
+  src/perception.cu
+  src/controller.cu
+  src/visualization.cu
+  )
+
+# Include directories for the rmpc_node target
+target_include_directories(rmpc_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${CMAKE_CURRENT_SOURCE_DIR}/helper/randomized-mpc/include  
+)
 # Link ROS 2 libraries and the rmpc CUDA library
-ament_target_dependencies(rmpc_node rclcpp nav_msgs sensor_msgs ackermann_msgs tf2 tf2_ros)
+ament_target_dependencies(
+  rmpc_node 
+  rclcpp 
+  nav_msgs 
+  sensor_msgs 
+  ackermann_msgs 
+  geometry_msgs 
+  visualization_msgs 
+  tf2 
+  tf2_ros)
 target_link_libraries(rmpc_node rmpc::rmpc)
 
 if(BUILD_TESTING)
@@ -43,19 +68,12 @@ if(BUILD_TESTING)
 
 endif()
 
-include_directories(include)
-target_include_directories(rmpc_node PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-  ${CMAKE_CURRENT_SOURCE_DIR}/helper/randomized-mpc/include  
-)
 install(TARGETS
   rmpc_node
   DESTINATION lib/${PROJECT_NAME}
 )
 install(PROGRAMS 
   scripts/rmpc_node.py
-  scripts/obstacles_spawner.py
   DESTINATION lib/${PROJECT_NAME}
 )
 install(DIRECTORY
