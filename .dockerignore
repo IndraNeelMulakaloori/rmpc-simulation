@@ -1,0 +1,9 @@
+build/
+install/
+log/
+.git/
+.vscode/
+__pycache__/
+*.pyc
+*.bag
+*.mcap

@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  rmpc_stack:
+    image: rmpc_f1tenth:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rmpc_f1tenth_container
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ~/.Xauthority:/root/.Xauthority:rw
+      # Mount maps into simulator share directory
+      - ./maps:/sim_ws/install/f1tenth_gym_ros/share/f1tenth_gym_ros/maps:rw
+      # Mount your configured sim.yaml directly over the simulator config
+      - ./config/sim.yaml:/sim_ws/install/f1tenth_gym_ros/share/f1tenth_gym_ros/config/sim.yaml:rw
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
+    command: bash
