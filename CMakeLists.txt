@@ -80,7 +80,7 @@ install(DIRECTORY
   launch
   rviz
   config
-  waypoints
+  maps
   DESTINATION share/${PROJECT_NAME}/
 )
 
