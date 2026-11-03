@@ -39,12 +39,13 @@ namespace rmpc_f1tenth{
         allocation_size_ = rows_ * columns_ * sizeof(int8_t);
         occupancy_grid_.assign(rows_ * columns_, 0); // Initialize the CPU-side occupancy grid with zeros
 
-        // Retrieve waypoints(Centerline)
+        // Load the centerline from the specified waypoints file
+        // Current Script only supports centerline in the form of CSV with x,y,w_left,w_right
+        // To support raceline.csv, 
+        // we need to define a new method to handle the raceline format.
         std::string package_share = ament_index_cpp::get_package_share_directory("rmpc_f1tenth");
-        std::string default_path = package_share + "/waypoints/IMS_centerline.csv";
-        this->declare_parameter<std::string>("centerline_path", default_path);
-        std::string centerline_path = this->get_parameter("centerline_path").as_string();
-
+        std::string centerline_path = package_share + '/'+ waypoints_file_;
+    
         loadCenterline(centerline_path);
         visualizeCenterline();
 
@@ -71,6 +72,8 @@ namespace rmpc_f1tenth{
         /**
          * @brief Declare and load all parameters for the RMPC node.
          */
+        // Map parameters
+        waypoints_file_ = this->get_parameter("waypoints_file").as_string();
         // Topic parameters
         odom_topic_       = this->get_parameter("odom_topic").as_string();
         // opp_odom_topic_ = this->get_parameter("opp_odom_topic").as_string();

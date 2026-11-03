@@ -109,7 +109,8 @@ namespace rmpc_f1tenth
         std::vector<Waypoint> reference_path_;
         int ego_closest_idx_{0};
         int opp_closest_idx_{0};
-
+        // Map parameters
+        std::string waypoints_file_;
         // Topic Names
         std::string odom_topic_;
         std::string drive_topic_;
