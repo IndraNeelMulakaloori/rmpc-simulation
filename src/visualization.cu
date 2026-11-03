@@ -30,41 +30,48 @@ namespace rmpc_f1tenth
         if (reference_path_.empty())
             return;
 
-        visualization_msgs::msg::Marker line_strip;
-        line_strip.header.frame_id = "map";
-        line_strip.header.stamp = this->now();
-        line_strip.ns = "track_centerline";
-        line_strip.id = 0;
-        line_strip.type = visualization_msgs::msg::Marker::LINE_STRIP;
-        line_strip.action = visualization_msgs::msg::Marker::ADD;
-        line_strip.scale.x = 0.1; // Line width in meters
-
-        // Cyan / White color for track reference line
-        line_strip.color.r = 0.0f;
-        line_strip.color.g = 0.8f;
-        line_strip.color.b = 1.0f;
-        line_strip.color.a = 0.8f;
-
-        for (const auto &wp : reference_path_)
-        {
-            geometry_msgs::msg::Point p;
-            p.x = static_cast<double>(wp.x);
-            p.y = static_cast<double>(wp.y);
-            p.z = 0.02; // Slightly above ground to prevent Z-fighting
-            line_strip.points.push_back(p);
+        visualization_msgs::msg::Marker dashed_line;
+        dashed_line.header.frame_id = "map";
+        dashed_line.header.stamp = this->now();
+        dashed_line.ns = "track_centerline";
+        dashed_line.id = 0;
+        dashed_line.type = visualization_msgs::msg::Marker::LINE_LIST;
+        dashed_line.action = visualization_msgs::msg::Marker::ADD;
+        dashed_line.scale.x = 0.06; // Width of the dashed stripe
+        
+        // Bright yellow road-stripe color
+        dashed_line.color.r = 1.0f;
+        dashed_line.color.g = 0.85f;
+        dashed_line.color.b = 0.0f;
+        dashed_line.color.a = 0.95f;
+        
+        // Dash pattern: 0.4 m stripe, 0.3 m gap (0.7 m cycle)
+        const float dash_length = 0.40f;
+        const float gap_length = 0.30f;
+        const float period = dash_length + gap_length;
+        
+        const size_t N = reference_path_.size();
+        for (size_t i = 0; i < N; ++i) {
+            size_t next_idx = (i + 1) % N;
+            float s = reference_path_[i].s;
+        
+            // Only draw segment if within the solid part of the dash cycle
+            if (std::fmod(s, period) < dash_length) {
+                geometry_msgs::msg::Point p1, p2;
+                p1.x = static_cast<double>(reference_path_[i].x);
+                p1.y = static_cast<double>(reference_path_[i].y);
+                p1.z = 0.02; // Placed just above ground
+            
+                p2.x = static_cast<double>(reference_path_[next_idx].x);
+                p2.y = static_cast<double>(reference_path_[next_idx].y);
+                p2.z = 0.02;
+            
+                dashed_line.points.push_back(p1);
+                dashed_line.points.push_back(p2);
+            }
         }
-
-        // Close the loop if it's a circuit
-        if (!reference_path_.empty())
-        {
-            geometry_msgs::msg::Point p;
-            p.x = static_cast<double>(reference_path_.front().x);
-            p.y = static_cast<double>(reference_path_.front().y);
-            p.z = 0.02;
-            line_strip.points.push_back(p);
-        }
-
-        centerline_publisher_->publish(line_strip);
+    
+        centerline_publisher_->publish(dashed_line);
     }
     std::pair<float, float> RMPC::frenetToGlobal(float s, float d) const
     {
@@ -107,68 +114,95 @@ namespace rmpc_f1tenth
     }
 
     void RMPC::visualizeTrajectories(
-        const F1TenthGrid::State &start_state,
-        const std::vector<F1TenthGrid::Reference> &ref_horizon,
-        float optimal_steer)
-    {
+    const F1TenthGrid::State& start_state,
+    const std::vector<F1TenthGrid::Reference>& ref_horizon,
+    float optimal_steer) {
 
-        visualization_msgs::msg::MarkerArray marker_array;
-        rclcpp::Time current_time = this->now();
+    visualization_msgs::msg::MarkerArray marker_array;
+    rclcpp::Time current_time = this->now();
 
-        // 1. Publish Candidate Rollout Fan (Thin Gray Lines)
-        // Note: rmpc_ctrl_ exposes internal rollouts if available, or we publish
-        // a representative visualization marker set for RViz feedback.
-        visualization_msgs::msg::Marker candidate_lines;
-        candidate_lines.header.frame_id = "map";
-        candidate_lines.header.stamp = current_time;
-        candidate_lines.ns = "candidate_trajectories";
-        candidate_lines.id = 1;
-        candidate_lines.type = visualization_msgs::msg::Marker::LINE_LIST;
-        candidate_lines.action = visualization_msgs::msg::Marker::ADD;
-        candidate_lines.scale.x = 0.01; // Thin line width
+    // 1. Dense Candidate Rollout Fan
+    visualization_msgs::msg::Marker candidate_lines;
+    candidate_lines.header.frame_id = "map";
+    candidate_lines.header.stamp = current_time;
+    candidate_lines.ns = "candidate_trajectories";
+    candidate_lines.id = 1;
+    candidate_lines.type = visualization_msgs::msg::Marker::LINE_LIST;
+    candidate_lines.action = visualization_msgs::msg::Marker::ADD;
+    candidate_lines.scale.x = 0.008; // Crisp thin lines
 
-        candidate_lines.color.r = 0.6f;
-        candidate_lines.color.g = 0.6f;
-        candidate_lines.color.b = 0.6f;
-        candidate_lines.color.a = 0.25f; // Translucent gray
+    // Vibrant Electric Cyan with solid opacity to stand out on dark costmaps
+    candidate_lines.color.r = 0.0f;
+    candidate_lines.color.g = 0.85f;
+    candidate_lines.color.b = 1.0f;
+    candidate_lines.color.a = 0.45f;
 
-        // 2. Publish Optimal Selected Trajectory (Thick Bright Red Line)
-        visualization_msgs::msg::Marker optimal_line;
-        optimal_line.header.frame_id = "map";
-        optimal_line.header.stamp = current_time;
-        optimal_line.ns = "optimal_trajectory";
-        optimal_line.id = 2;
-        optimal_line.type = visualization_msgs::msg::Marker::LINE_STRIP;
-        optimal_line.action = visualization_msgs::msg::Marker::ADD;
-        optimal_line.scale.x = 0.04; // Thicker line width so it pops
+    const int num_viz_trajs = 61; // Dense sampling envelope
+    const float steer_min = -static_cast<float>(max_steering_limit_);
+    const float steer_max = static_cast<float>(max_steering_limit_);
+    const float steer_step = (steer_max - steer_min) / static_cast<float>(num_viz_trajs - 1);
+    const float sim_vx = static_cast<float>(v_min_);
 
-        optimal_line.color.r = 1.0f;
-        optimal_line.color.g = 0.0f;
-        optimal_line.color.b = 0.0f;
-        optimal_line.color.a = 1.0f; // Solid red
-
-        // Reconstruct the optimal trajectory rollout using simple kinematic projection over horizon
+    for (int i = 0; i < num_viz_trajs; ++i) {
+        float test_steer = steer_min + (static_cast<float>(i) * steer_step);
         float sim_s = start_state.s;
         float sim_d = start_state.d;
-        float sim_vx = static_cast<float>(v_min_); // Approximate progression velocity
 
-        for (int k = 0; k < horizon_; ++k)
-        {
-            auto [gx, gy] = frenetToGlobal(sim_s, sim_d);
-            geometry_msgs::msg::Point p;
-            p.x = static_cast<double>(gx);
-            p.y = static_cast<double>(gy);
-            p.z = 0.05; // Slightly elevated over centerline to prevent Z-fighting
-            optimal_line.points.push_back(p);
+        for (int k = 0; k < horizon_ - 1; ++k) {
+            auto [gx1, gy1] = frenetToGlobal(sim_s, sim_d);
 
-            // Advance simulation step
             sim_s += sim_vx * static_cast<float>(dt_);
-            // Apply steering curvature influence to lateral offset d
-            sim_d += std::tan(optimal_steer) * sim_vx * static_cast<float>(dt_);
-        }
+            sim_d += std::tan(test_steer) * sim_vx * static_cast<float>(dt_);
 
-        marker_array.markers.push_back(candidate_lines);
-        marker_array.markers.push_back(optimal_line);
-        traj_publisher_->publish(marker_array);
+            auto [gx2, gy2] = frenetToGlobal(sim_s, sim_d);
+
+            geometry_msgs::msg::Point p1, p2;
+            p1.x = static_cast<double>(gx1);
+            p1.y = static_cast<double>(gy1);
+            p1.z = 0.04; // Sits completely above the occupancy grid
+
+            p2.x = static_cast<double>(gx2);
+            p2.y = static_cast<double>(gy2);
+            p2.z = 0.04;
+
+            candidate_lines.points.push_back(p1);
+            candidate_lines.points.push_back(p2);
+        }
     }
+
+    // 2. Slimmer, Prominent Optimal Trajectory
+    visualization_msgs::msg::Marker optimal_line;
+    optimal_line.header.frame_id = "map";
+    optimal_line.header.stamp = current_time;
+    optimal_line.ns = "optimal_trajectory";
+    optimal_line.id = 2;
+    optimal_line.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    optimal_line.action = visualization_msgs::msg::Marker::ADD;
+    optimal_line.scale.x = 0.018; // Slimmed down from 0.04
+
+    // Solid bright crimson
+    optimal_line.color.r = 1.0f;
+    optimal_line.color.g = 0.05f;
+    optimal_line.color.b = 0.05f;
+    optimal_line.color.a = 1.0f;
+
+    float opt_s = start_state.s;
+    float opt_d = start_state.d;
+
+    for (int k = 0; k < horizon_; ++k) {
+        auto [gx, gy] = frenetToGlobal(opt_s, opt_d);
+        geometry_msgs::msg::Point p;
+        p.x = static_cast<double>(gx);
+        p.y = static_cast<double>(gy);
+        p.z = 0.06; // Highest elevation to avoid overlap
+        optimal_line.points.push_back(p);
+
+        opt_s += sim_vx * static_cast<float>(dt_);
+        opt_d += std::tan(optimal_steer) * sim_vx * static_cast<float>(dt_);
+    }
+
+    marker_array.markers.push_back(candidate_lines);
+    marker_array.markers.push_back(optimal_line);
+    traj_publisher_->publish(marker_array);
+}
 } // namespace rmpc_f1tenth

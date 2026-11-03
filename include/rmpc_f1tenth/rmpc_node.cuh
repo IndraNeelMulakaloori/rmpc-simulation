@@ -124,6 +124,7 @@ namespace rmpc_f1tenth
         int samples_{5000};
         int n_basis_{7};
         int seed_{70997};
+        bool warm_start_{true};
 
         // Vehicle & Longitudinal Profile Parameters
         double v_max_{10.5};
@@ -151,6 +152,7 @@ namespace rmpc_f1tenth
         int y_offset_{0};
         int inflation_radius_{3};
         int lateral_clearance_{1};
+        float hit_cost_{0.0f};
         std::vector<int8_t> occupancy_grid_;
         bool map_initialized_{false};
 
