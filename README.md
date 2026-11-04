@@ -4,6 +4,11 @@
 
 A ROS 2 package that runs a CUDA-accelerated Randomized Model Predictive Control (RMPC) controller in the F1TENTH simulator. The stack combines LiDAR-based obstacle avoidance with track-aware speed planning and configurable controller parameters.
 
+
+
+## Demo 
+[Youtube link](https://youtu.be/CLicTFfKjeo?si=9EVXIQpClDetIMqP)
+
 ## Features
 
 - **GPU-accelerated RMPC:** Runs randomized model predictive control on CUDA.
@@ -17,17 +22,13 @@ Edit `config/config.yaml` to tune the controller parameters.
 
 The `helper/randomized-mpc` submodule is a fork of the upstream project with the `-Werror` flag removed from `helper/randomized-mpc/CMakeLists.txt`.
 
-
-
-
-
-
 ## Prerequisites
 
 - **OS:** Ubuntu 22.04 LTS (ROS 2 Humble)
 - **GPU:** NVIDIA GPU with proprietary drivers installed
 - **Docker:** Docker Engine & Docker Compose
 - **NVIDIA Container Toolkit:** `nvidia-container-toolkit`
+
 
 
 
