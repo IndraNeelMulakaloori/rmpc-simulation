@@ -38,7 +38,7 @@ For native setup, clone directly into the ROS workspace (no later move is needed
 ```bash
 mkdir -p ~/rmpc_ws/src
 cd ~/rmpc_ws/src
-git clone --recurse-submodules git@github.com:IndraNeelMulakaloori/rmpc-simulation.git rmpc_f1tenth
+git clone --recurse-submodules https://github.com/IndraNeelMulakaloori/rmpc-simulation.git rmpc_f1tenth
 cd rmpc_f1tenth/
 ```
 
@@ -236,7 +236,7 @@ Baseline clearance was not evaluated; the evaluator's 10,000 m value is a placeh
 
 
 ### Record a Telemetry Bag
-Below laucnh simulatenously launches and records the controller.
+The launch file below simultaneously runs the controller and records telemetry:
 ```bash
 ros2 launch rmpc_f1tenth record.launch.py
 ```
@@ -298,10 +298,11 @@ Bug reports, feature ideas, and pull requests are welcome. For substantial chang
 This project integrates the GPU-accelerated Randomized Model Predictive Control (RMPC) solver developed by **Arun Muraleedharan** with the **F1TENTH** autonomous racing simulation framework.
 
 ### Core Controller
-The core controller in `helper/randomized-mpc` is governed by the [PolyForm Noncommercial License 1.0.0](/rmpc_f1tenth/helper/randomized-mpc/LICENSE.md) (Copyright © 2026 Arun Muraleedharan). If you use this package in your research, please cite the foundational RMPC papers:
+The core controller in `helper/randomized-mpc` is governed by the [PolyForm Noncommercial License 1.0.0](helper/randomized-mpc/LICENSE.md) (Copyright © 2026 Arun Muraleedharan). If you use this package in your research, please cite the foundational RMPC papers:
 
 - A. Muraleedharan, H. Okuda, and T. Suzuki, "Real-Time Implementation of Randomized Model Predictive Control for Autonomous Driving," *IEEE Transactions on Intelligent Vehicles*, vol. 7, no. 1, pp. 86–97, 2022. doi: [10.1109/TIV.2021.3062730](https://doi.org/10.1109/TIV.2021.3062730)
-- A. Muraleedharan, I. Simões, and G. Pau, "Randomized Model Predictive Control for Autonomous Racing," in *2025 IEEE Intelligent Vehicles Symposium (IV)*, 2025.
+- A. Muraleedharan, I. Simões and G. Pau, "Randomized Model Predictive Control for Autonomous Racing," 2025 IEEE Intelligent Vehicles Symposium (IV), Cluj-Napoca, Romania, 2025, pp. 1078-1085, doi: [10.1109/IV64158.2025.11097631](https://doi.org/10.1109/IV64158.2025.11097631) 
+
 
 ### Simulation Platform
 Simulation validation and testing utilise [f1tenth_gym_ros](https://github.com/f1tenth/f1tenth_gym_ros). If you use this platform, please cite the original F1TENTH simulator:
